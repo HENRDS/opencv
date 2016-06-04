@@ -208,4 +208,11 @@ bool IndoorPosCapture::setProperty(int propID, double value)
     return false; 
 }
 
+Ptr<IVideoCapture> createIndoorPosCapture(const String& filename)
+{
+    Ptr<IndoorPosCapture> inpos(new IndoorPosCapture(filename));
+    if (inpos->isOpened())
+        return inpos;
+    return Ptr<IndoorPosCapture>();
+}
 }

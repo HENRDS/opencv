@@ -502,6 +502,7 @@ static Ptr<IVideoCapture> IVideoCapture_create(const String& filename)
 #ifdef HAVE_GPHOTO2
         CV_CAP_GPHOTO2,
 #endif
+        CV_CAP_INPOS,
         -1, -1
     };
 
@@ -514,6 +515,9 @@ static Ptr<IVideoCapture> IVideoCapture_create(const String& filename)
         {
         case CV_CAP_ANY:
             capture = createMotionJpegCapture(filename);
+            break;
+        case CV_CAP_INPOS:
+            capture = createIndoorPosCapture(filename);
             break;
 #ifdef HAVE_GPHOTO2
         case CV_CAP_GPHOTO2:

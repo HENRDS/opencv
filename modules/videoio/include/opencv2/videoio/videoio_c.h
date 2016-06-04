@@ -117,7 +117,8 @@ enum
     CV_CAP_GPHOTO2 = 1700,
     CV_CAP_GSTREAMER = 1800, // GStreamer
     CV_CAP_FFMPEG = 1900,    // FFMPEG
-    CV_CAP_IMAGES = 2000     // OpenCV Image Sequence (e.g. img_%02d.jpg)
+    CV_CAP_IMAGES = 2000,     // OpenCV Image Sequence (e.g. img_%02d.jpg)
+    CV_CAP_INPOS = 2100
 };
 
 /* start capturing frames from camera: index = camera_index + domain_offset (CV_CAP_*) */
