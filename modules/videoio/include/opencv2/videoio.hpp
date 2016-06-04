@@ -93,7 +93,8 @@ enum { CAP_ANY          = 0,     // autodetect
        CAP_GPHOTO2      = 1700,  // gPhoto2 connection
        CAP_GSTREAMER    = 1800,  // GStreamer
        CAP_FFMPEG       = 1900,  // FFMPEG
-       CAP_IMAGES       = 2000   // OpenCV Image Sequence (e.g. img_%02d.jpg)
+       CAP_IMAGES       = 2000,  // OpenCV Image Sequence (e.g. img_%02d.jpg)
+       CAP_INPOS        = 2100   // Indoor positioning system
      };
 
 // generic properties (based on DC1394 properties)
