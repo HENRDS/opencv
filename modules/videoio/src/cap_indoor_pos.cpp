@@ -26,7 +26,7 @@ public:
     InPosPollingThread(IndoorPosImg *);
     ~InPosPollingThread();
     void stop();
-    void get(OutputArray);
+    bool get(OutputArray, int*);
     
 private:
     std::mutex* frame_lock;
@@ -46,23 +46,24 @@ InPosPollingThread::InPosPollingThread(IndoorPosImg* buffAddr)
     this->mapped_buff = buffAddr;
     this->frame_lock = new Mutex();
     this->worker_thread = new std::thread(poll);
-    this->current_frame = new Mat(Size(80, 45), CV_8UC1);
+    this->index = 0;
 }
 
 InPosPollingThread::~InPosPollingThread()
 {
     this->stop();
+    delete worker_thread;
     if (current_frame)
         delete current_frame;
     delete frame_lock;
 }
 inline void InPosPollingThread::copy_from_mmap() 
 {
-    this->frame_lock->lock();
+    
     for (int i = 0; i < 45; i++) 
         for (int j = 0; i < 80; j++)
             Mat.at<uchar>(i, j) = this->mapped_buff[index].img[i][j];
-    this->frame_lock->unlock();
+    
 }
 void InPosPollingThread::poll() 
 {
@@ -72,9 +73,14 @@ void InPosPollingThread::poll()
             std::this_thread::yield();
         if (should_stop)
             break;
+        
+        this->frame_lock->lock();
+        if(!current_frame)
+            this->current_frame = new Mat(Size(80, 45), CV_8UC1);
         copy_from_mmap();
         this->mapped_buff[index].canRead = false;
-        index++;
+        index = (index+1) % 3;
+        this->frame_lock->unlock();
     }
 }
 
@@ -88,17 +94,19 @@ void InPosPollingThread::stop()
     {}
 }
 
-void InPosPollingThread::get(OutputArray image) 
+bool InPosPollingThread::get(OutputArray image, int* frameIndex     ) 
 {
     if (!polling) {
         image= noArray();
-        return;
+        return false;
     }
-    while (!current_frame) 
+    while (!current_frame || (*frameIndex == index-1))
         std::this_thread::yield();
     this->frame_lock->lock();
     current_frame->copyTo(image);
     this->frame_lock->unlock();    
+    *frameIndex= index-1;
+    return true;
 }
 
 
@@ -120,15 +128,16 @@ private: /* static */
     static IndoorPosImg* buffer;
     static InPosPollingThread * poll_thread;
     static int file_desc;
-    static unsigned int use_count;
     
 private: /*instance*/
     Mat grab_buff;
+    int frameIndex;
 };
 
 IndoorPosCapture::IndoorPosCapture(const String& filename)
 {
     this->openFile(filename);
+    frameIndex = 0;
 }
 
 IndoorPosCapture::~IndoorPosCapture() 
@@ -137,42 +146,38 @@ IndoorPosCapture::~IndoorPosCapture()
 }
 
 bool IndoorPosCapture::isOpened() const {
-    return file_desc != -1;
+    return file_desc > 0;
 }
 
 bool IndoorPosCapture::openFile(const String& filename) 
 {
     if (!isOpened()) {
-        this->file_desc = open(filename, O_WRONLY);
-        if (this->file_desc == -1)
+        file_desc = open(filename, O_WRONLY);
+        if (file_desc == -1)
             return false;
         
-        buffer = (IndoorPosImg*)mmap(0, sizeof(IndoorPosImg) * 3, PROT_READ | PROT_WRITE, MAP_SHARED, file_desc,0);
+        buffer = (IndoorPosImg*)mmap(0, sizeof(IndoorPosImg) * 3, PROT_READ | PROT_WRITE, MAP_SHARED, file_desc, 0);
         if (buffer == MAP_FAILED)
             return false;
             
-        this->poll_thread = new InPosPollingThread(buffer);
+        poll_thread = new InPosPollingThread(buffer);
     }
 
-    CV_XADD(use_count, 1);
-    return file_desc != 0;
+    return isOpened();
 }
 
 void IndoorPosCapture::closeFile() {
     if (isOpened()) {
-        delete this->poll_thread;
-        munmap(this->buffer, sizeof(IndoorPosImg) * 3);
+        delete poll_thread;
         if (close(file_desc) == -1)
-            CV_ERROR(-1, "Cannot close IndoorPos file!");  // IDK... dangerous
+            return;//CV_ERROR(-1, "Cannot close IndoorPos file!");  // IDK... dangerous
     }
-    CV_XADD(use_count, -1);
 }
 
 bool IndoorPosCapture::grabFrame()
 {
     if (isOpened()) {
-        this->poll_thread->get(grab_buff);
-        return true;
+        return poll_thread->get(grab_buff);
     }
     return false;
 }
