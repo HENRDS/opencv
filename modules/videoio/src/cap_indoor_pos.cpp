@@ -8,45 +8,44 @@
 #include <sys/mman.h>
 #include <fcntl.h>
 
+#include <InPosStructures.h>
 #include <math.h>
+#include <thread>
 #include <mutex>
 #include <system_error>
 
+
 namespace cv 
 {
-struct IndoorPosImg
-{
-    unsigned char img[45][80];
-    volatile bool canRead;
-};    
 
 class InPosPollingThread
 {
 public:
-    InPosPollingThread(IndoorPosImg *);
+    InPosPollingThread(InPosImage *);
     ~InPosPollingThread();
     void stop();
-    bool get(OutputArray, int*);
+    bool get(OutputArray, unsigned int *);
     
 private:
     std::mutex* frame_lock;
     std::thread* worker_thread;
     Mat* current_frame;
-    IndoorPosImg* mapped_buff;
+    InPosImage* mapped_buff;
     
-    int index;
-    volatile bool polling;
+    unsigned int index;
     volatile bool should_stop;
     void poll();
     inline void copy_from_mmap();
 };
 
-InPosPollingThread::InPosPollingThread(IndoorPosImg* buffAddr)
+InPosPollingThread::InPosPollingThread(InPosImage* buffAddr)
 {
     this->mapped_buff = buffAddr;
     this->frame_lock = new Mutex();
     this->worker_thread = new std::thread(poll);
-    this->index = 0;
+    this->index = 0
+    this->should_stop = false;
+    this->current_frame = new Mat(Size(INPOS_MAT_WIDTH, INPOS_MAT_HEIGHT), CV_8UC1);
 }
 
 InPosPollingThread::~InPosPollingThread()
@@ -59,27 +58,28 @@ InPosPollingThread::~InPosPollingThread()
 }
 inline void InPosPollingThread::copy_from_mmap() 
 {
-    
-    for (int i = 0; i < 45; i++) 
-        for (int j = 0; i < 80; j++)
-            Mat.at<uchar>(i, j) = this->mapped_buff[index].img[i][j];
+    for (int i = 0; i < INPOS_MAT_HEIGHT; i++) 
+        for (int j = 0; i < INPOS_MAT_WIDTH; j++)
+            Mat.at<uchar>(i, j) = this->mapped_buff->img[i][j];
     
 }
 void InPosPollingThread::poll() 
 {
     while(!should_stop)
     {
-        while(!(this->mapped_buff[index].canRead || should_stop)) 
+        while(!(mapped_buff->frameProduced || should_stop))
             std::this_thread::yield();
-        if (should_stop)
-            break;
+        if (should_stop) break;
+        this->mapped_buff->canTransfer = true;
         
-        this->frame_lock->lock();
-        if(!current_frame)
-            this->current_frame = new Mat(Size(80, 45), CV_8UC1);
+        while(!(this->mapped_buff->canConsume || should_stop)) 
+            std::this_thread::yield();
+        if (should_stop) break;
+        
+        this->frame_lock->lock();            
         copy_from_mmap();
-        this->mapped_buff[index].canRead = false;
-        index = (index+1) % 3;
+        this->mapped_buff->canConsume = false;
+        index++;
         this->frame_lock->unlock();
     }
 }
@@ -90,22 +90,22 @@ void InPosPollingThread::stop()
     try 
     {
         this->worker_thread->join();
-    } catch (const std::system_error& e)
-    {}
+    } catch (const std::system_error& e) {  }
 }
 
-bool InPosPollingThread::get(OutputArray image, int* frameIndex     ) 
+bool InPosPollingThread::get(OutputArray image, unsigned int *frame_index) 
 {
-    if (!polling) {
+    if (should_stop) 
+    {
         image= noArray();
         return false;
     }
-    while (!current_frame || (*frameIndex == index-1))
+    while ((*frame_index) == index)
         std::this_thread::yield();
     this->frame_lock->lock();
     current_frame->copyTo(image);
-    this->frame_lock->unlock();    
-    *frameIndex= index-1;
+    *frame_index = index;
+    this->frame_lock->unlock();   
     return true;
 }
 
@@ -125,19 +125,20 @@ public:
     bool openFile(const String&);
     void closeFile();
 private: /* static */
-    static IndoorPosImg* buffer;
+    static InPosImage* buffer;
     static InPosPollingThread * poll_thread;
     static int file_desc;
+    static volatile unsigned int usage_count;
     
-private: /*instance*/
+private: /* instance */
     Mat grab_buff;
-    int frameIndex;
+    unsigned int frame_index;
 };
 
 IndoorPosCapture::IndoorPosCapture(const String& filename)
 {
     this->openFile(filename);
-    frameIndex = 0;
+    this->frame_index = 0;
 }
 
 IndoorPosCapture::~IndoorPosCapture() 
@@ -145,7 +146,8 @@ IndoorPosCapture::~IndoorPosCapture()
     this->closeFile();
 }
 
-bool IndoorPosCapture::isOpened() const {
+bool IndoorPosCapture::isOpened() const 
+{
     return file_desc > 0;
 }
 
@@ -153,31 +155,33 @@ bool IndoorPosCapture::openFile(const String& filename)
 {
     if (!isOpened()) {
         file_desc = open(filename, O_WRONLY);
-        if (file_desc == -1)
+        if (file_desc <= 0)
             return false;
         
-        buffer = (IndoorPosImg*)mmap(0, sizeof(IndoorPosImg) * 3, PROT_READ | PROT_WRITE, MAP_SHARED, file_desc, 0);
+        buffer = (InPosImage*)mmap(0, sizeof(InPosImage), PROT_READ | PROT_WRITE, MAP_SHARED, file_desc, 0);
         if (buffer == MAP_FAILED)
             return false;
             
         poll_thread = new InPosPollingThread(buffer);
     }
-
+    CV_XADD(usage_count, 1);
     return isOpened();
 }
 
-void IndoorPosCapture::closeFile() {
-    if (isOpened()) {
+void IndoorPosCapture::closeFile() 
+{
+    CV_XADD(usage_count, -1);
+    
+    if (isOpened() && (usage_count == 0)) {
         delete poll_thread;
-        if (close(file_desc) == -1)
-            return;//CV_ERROR(-1, "Cannot close IndoorPos file!");  // IDK... dangerous
+        close(file_desc);
     }
 }
 
 bool IndoorPosCapture::grabFrame()
 {
     if (isOpened()) {
-        return poll_thread->get(grab_buff);
+        return poll_thread->get(grab_buff, &frame_index);
     }
     return false;
 }
@@ -187,11 +191,11 @@ double IndoorPosCapture::getProperty(int propID) const
     switch (propID)
     {
         case CAP_PROP_FRAME_WIDTH:
-            return 80.0;
+            return INPOS_MAT_WIDTH;
         case CAP_PROP_FRAME_HEIGHT:
-            return 45.0;
+            return INPOS_MAT_HEIGHT;
         case CAP_PROP_FPS:
-            return 0.5;
+            return INPOS_FRAME_RATE;
         default:
             return 0;
     }
