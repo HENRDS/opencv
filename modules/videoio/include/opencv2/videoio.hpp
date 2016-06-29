@@ -94,7 +94,9 @@ enum { CAP_ANY          = 0,     // autodetect
        CAP_GSTREAMER    = 1800,  // GStreamer
        CAP_FFMPEG       = 1900,  // FFMPEG
        CAP_IMAGES       = 2000,  // OpenCV Image Sequence (e.g. img_%02d.jpg)
-       CAP_INPOS        = 2100   // Indoor positioning system
+       CAP_INPOS        = 2100,  // Indoor positioning system
+       CAP_INPOS_OFFLINE= 2200
+        
      };
 
 // generic properties (based on DC1394 properties)
@@ -136,7 +138,9 @@ enum { CAP_PROP_POS_MSEC       =0,
        CAP_PROP_IRIS          =36,
        CAP_PROP_SETTINGS      =37,
        CAP_PROP_BUFFERSIZE    =38,
-       CAP_PROP_AUTOFOCUS     =39
+       CAP_PROP_AUTOFOCUS     =39,
+       CAP_PROP_PEOPLE_CNT    =40
+        
      };
 
 
@@ -472,7 +476,7 @@ enum { CAP_PROP_GPHOTO2_PREVIEW           = 17001, // Capture only preview from 
 //enum {
 
 class IVideoCapture;
-
+class InPosVideoCapture;
 /** @brief Class for video capturing from video files, image sequences or cameras. The class provides C++ API
 for capturing video from cameras or for reading video files and image sequences. Here is how the
 class can be used: :
@@ -519,6 +523,7 @@ class can be used: :
  */
 class CV_EXPORTS_W VideoCapture
 {
+    friend class InPosVideoCapture;
 public:
     /** @brief
     @note In C API, when you finished working with video, release CvCapture structure with
@@ -801,6 +806,21 @@ protected:
                                     Size frameSize, bool isColor = true);
 };
 
+class CV_EXPORTS InPosVideoCapture {
+public:
+  CV_WRAP  InPosVideoCapture(const String& filename);
+  CV_WRAP  InPosVideoCapture(const String& filename, int apireference);
+  CV_WRAP  InPosVideoCapture(int index);
+  CV_WRAP ~InPosVideoCapture();
+  
+  CV_WRAP int getPeopleCount();
+  CV_WRAP bool read(OutputArray image);
+  CV_WRAP bool grab();
+  CV_WRAP bool retrieve(OutputArray image, int flag=0);
+  CV_WRAP double get(int propId) const;
+private:
+  Ptr<VideoCapture> videocap;  
+};
 template<> CV_EXPORTS void DefaultDeleter<CvCapture>::operator ()(CvCapture* obj) const;
 template<> CV_EXPORTS void DefaultDeleter<CvVideoWriter>::operator ()(CvVideoWriter* obj) const;
 

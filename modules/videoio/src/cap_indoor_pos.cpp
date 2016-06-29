@@ -15,8 +15,7 @@
 #include <system_error>
 
 
-namespace cv 
-{
+namespace cv {
 
 class InPosPollingThread
 {
@@ -133,6 +132,8 @@ private: /* static */
 private: /* instance */
     Mat grab_buff;
     unsigned int frame_index;
+    double people_cnt;
+    int getPeopleCnt();
 };
 
 IndoorPosCapture::IndoorPosCapture(const String& filename)
@@ -186,6 +187,24 @@ bool IndoorPosCapture::grabFrame()
     return false;
 }
 
+int IndoorPosCapture::getPeopleCnt() {
+    SimpleBlobDetector::Params params;
+    params.minDistBetweenBlobs = 0;
+    params.filterByArea = true;
+    params.minArea = 1000;
+    params.maxArea = 500000;
+    params.filterByCircularity = false;
+    params.filterByConvexity = false;
+    params.filterByInertia = true;
+    params.minInertiaRatio= 0.01;
+    params.maxInertiaRatio= 0.99;
+
+    Ptr<SimpleBlobDetector> detector = SimpleBlobDetector::create(params);
+    std::vector<KeyPoint> keypoints;
+    detector->detect(this->grab_buff, keypoints);
+    return keypoints.size();
+}
+
 double IndoorPosCapture::getProperty(int propID) const 
 {
     switch (propID)
@@ -196,6 +215,8 @@ double IndoorPosCapture::getProperty(int propID) const
             return INPOS_MAT_HEIGHT;
         case CAP_PROP_FPS:
             return INPOS_FRAME_RATE;
+        case CAP_PROP_PEOPLE_CNT:
+            return ceil(this->people_cnt);
         default:
             return 0;
     }
@@ -205,6 +226,7 @@ bool IndoorPosCapture::retrieveFrame(int flags, OutputArray image)
 {
     if (isOpened() && (!grab_buff.empty())) {
         grab_buff.copyTo(image);
+        this->people_cnt = (this->people_cnt * 0.8) + (this->getPeopleCnt() * 0.2);
         return true;
     }
     image = NULL;
@@ -224,4 +246,19 @@ Ptr<IVideoCapture> createIndoorPosCapture(const String& filename)
         return inpos;
     return Ptr<IndoorPosCapture>();
 }
+class CV_EXPORTS InPosVideoCapture {
+public:
+  CV_WRAP  InPosVideoCapture(const String& filename);
+  CV_WRAP  InPosVideoCapture(const String& filename, int apireference);
+  CV_WRAP  InPosVideoCapture(int index);
+  CV_WRAP ~InPosVideoCapture();
+  
+  CV_WRAP int getPeopleCount();
+  CV_WRAP bool read(OutputArray image);
+  CV_WRAP bool grab();
+  CV_WRAP bool retrieve(OutputArray image, int flag=0);
+  CV_WRAP double get(int propId) const;
+private:
+  Ptr<VideoCapture> videocap;  
+};
 }

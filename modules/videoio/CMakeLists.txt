@@ -25,6 +25,8 @@ set(videoio_srcs
     ${CMAKE_CURRENT_LIST_DIR}/src/cap_images.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/cap_mjpeg_encoder.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/cap_mjpeg_decoder.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/src/cap_indoor_pos.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/src/cap_indoor_pos_offline.cpp
     )
 
 file(GLOB videoio_ext_hdrs

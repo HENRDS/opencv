@@ -517,8 +517,11 @@ static Ptr<IVideoCapture> IVideoCapture_create(const String& filename)
             capture = createMotionJpegCapture(filename);
             break;
         case CV_CAP_INPOS:
-            capture = createIndoorPosCapture(filename);
+            //capture = createIndoorPosCapture(filename);
             break;
+        case CV_CAP_INPOS_OFFLINE:
+            capture = createIndoorPosOfflineCapture(createMotionJpegCapture(filename));
+            break;    
 #ifdef HAVE_GPHOTO2
         case CV_CAP_GPHOTO2:
             capture = createGPhoto2Capture(filename);
@@ -760,5 +763,51 @@ int VideoWriter::fourcc(char c1, char c2, char c3, char c4)
 {
     return (c1 & 255) + ((c2 & 255) << 8) + ((c3 & 255) << 16) + ((c4 & 255) << 24);
 }
+
+InPosVideoCapture::InPosVideoCapture(int index) 
+{
+    this->videocap = Ptr<VideoCapture>(new VideoCapture(index));
+}
+InPosVideoCapture::InPosVideoCapture(const String& filename)
+{
+    this->videocap = Ptr<VideoCapture>(new VideoCapture(filename, CAP_INPOS_OFFLINE));
+}        
+InPosVideoCapture::InPosVideoCapture(const String& filename, int apireference)
+{
+    if (!apireference == CAP_INPOS)
+        CV_ERROR(-1, "apireference must be CAP_INPOS!");
+    this->videocap = Ptr<VideoCapture>(new VideoCapture(filename, apireference));
+}
+
+InPosVideoCapture::~InPosVideoCapture() {
+    delete videocap;
+}
+
+double InPosVideoCapture::get(int propId) const {
+    return videocap->get(propId);
+}
+
+bool InPosVideoCapture::read(OutputArray image) {
+    return this->videocap->read(image);
+}
+
+bool InPosVideoCapture::grab() {
+    return this->videocap->grab();
+    }
+
+bool InPosVideoCapture::retrieve(OutputArray image, int flag) {
+    return this->videocap->retrieve(image, flag);
+}
+
+int InPosVideoCapture::getPeopleCount() {
+    int dom = this->videocap->icap->getCaptureDomain();
+    if ( dom == CAP_INPOS_OFFLINE || dom == CAP_INPOS) 
+        return this->videocap->get(CAP_PROP_PEOPLE_CNT);
+    else
+        return -1;
+}
+
+
+
 
 }
